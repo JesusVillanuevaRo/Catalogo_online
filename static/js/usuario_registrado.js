@@ -1,0 +1,1 @@
+alert('El correo que ingresó ya fue registrado, revise su información')
