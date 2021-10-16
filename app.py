@@ -6,11 +6,11 @@ from dotenv import dotenv_values
 import bcrypt
 
 
-
+# Conexion a la báse de datos
 try:
     env = dotenv_values(".env")
     db = MongoClient(env["MONGO_URI"])
-    usuarios = db.catalogo.usuario
+    usuarios = db.catalogo.usuario  
     productos = db.catalogo.producto
     print("Conexión existosa a la Base de datos en la nube")
 except ConnectionFailure:
@@ -19,11 +19,13 @@ except ConnectionFailure:
 
 app = Flask(__name__)
 
-app.secret_key = env["secretky"]
+app.secret_key = env["secretky"] #Llave secreta para ejecutar session cuyo valor se encuentra en el archivo .env
 
 sal = bcrypt.gensalt()
 
 
+# Ruta principal que muestra el catalogo completo y dependiendo de si se ha iniciado sesión
+# oculta o muestra ciertas partes del front
 @app.route('/')
 def main():
     mostrador = productos.find()
@@ -38,62 +40,69 @@ def main():
     return render_template('main.html',mostrador=mostrador, btn_primarios=btn_primarios,btn_especiales=btn_especiales)
 
 
+# Ruta para iniciar sesión
 @app.route('/login', methods=["GET","POST"])
 def login():
     if request.method == "POST":
         correo = request.form['correo']
         password = request.form['password']
-        password = password.encode()
-        password = bcrypt.hashpw(password,sal)
-        usr = usuarios.find_one({"correo":correo, 'password': password})
-        if usr:
+        password = password.encode()    #Codifica la contraseña
+        password = bcrypt.hashpw(password,sal)  #Hashea la contraseña
+        usr = usuarios.find_one({"correo":correo, 'password': password}) #Busca coinsidencias de correo y contraseña en la DB
+        if usr:     #Si encuentra las coincidencias anteriores inicia una sesión y redirecciona a la página principal
             session['usr'] = correo
             session['usr_name'] = usr['nombre']
             return redirect('/')
 
-        else: 
+        else:       #si no encuentra las coincidencias arroja una alerta
             return render_template('login.html',alerta = "/static/js/usuario_no_encontrado.js")
 
     return render_template('login.html')
 
 
+# Ruta para registrar un nuevo usuario
 @app.route('/signup', methods=["GET","POST"])
 def signup():
     if request.method == "POST":
         correo = request.form['correo']
         password = request.form['password']
-        password = password.encode()
-        password = bcrypt.hashpw(password,sal)
+        password = password.encode()    #Codifica la contraseña
+        password = bcrypt.hashpw(password,sal)  #Hashea la contraseña
         nombre = request.form['nombre']
-        usr = usuarios.find_one({"correo":correo})
-        if usr:
+        usr = usuarios.find_one({"correo":correo})  #Busca si el correo ya esta registrado
+        if usr:     #Si el correo ya fue registrado envía una alerta
             return render_template('signup.html',alerta = "/static/js/usuario_registrado.js")
 
-        else: 
+        else:       #Al no encontrar registrado el correo procede a guardar la información en la base de datos
             id = usuarios.insert_one({"nombre":nombre,"correo":correo, "password":password})
             return redirect('/')
     return render_template('signup.html')    
 
 
+# Ruta para cerrar sesión
+# Al acceder a esta ruta se borran los datos de sesión y redirecciona a la página principal
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect('/')
 
 
+# Ruta para ver los productos que ah registrado un usuario
 @app.route('/mis_productos')
 def mis_productos():
-    if 'usr' in session:
+    if 'usr' in session:    #Si la sesión está activa busca los productos con los datos de la sesión actual
         usr = usuarios.find({'correo':session['usr']})
         for x in usr:
-            id_cliente=x['_id']
-        mostrador = productos.find({'id_cliente':str(id_cliente)})
-        return render_template('mis_productos.html',mostrador=mostrador, username=session['usr_name'])
+            id_cliente=x['_id']     #Accede al _id que tiene el usuario en sesión
+        mostrador = productos.find({'id_cliente':str(id_cliente)})  #Busca los productos que tienen como "id_cliente" el "_id" del usuario en sesión
+        return render_template('mis_productos.html',mostrador=mostrador, username=session['usr_name'])  #Envía los datos al front para que sean renderizados
 
-    else:
+    else:                   #Si no hay sesion activa envía una alerta y redirecciona a la página de inicio de sesión
         return render_template('login.html',alerta = "/static/js/no_login.js")
 
 
+# Ruta para eliminar un producto registrado
+# Mediante el metodo post recibe la información del producto a eliminar y lo elimina de la base de datos
 @app.route('/eliminar', methods=["GET","POST"])
 def eliminar():
     if request.method == "POST":
@@ -104,10 +113,13 @@ def eliminar():
     return redirect('/mis_productos')
 
 
+# Ruta para editar un producto registrado
 @app.route('/editar',methods=["GET","POST"])
 def editar():
-    if 'usr' in session:
+    if 'usr' in session:    #Si hay una sesión iniciada
         if request.method == "POST":
+            #Recibe atravéz de un metodo post los cambios realizados y actualiza
+            #el documento en la base de datos
             producto = request.form['producto']
             tipo = request.form['tipo']
             precio = request.form['precio']
@@ -117,6 +129,8 @@ def editar():
             return redirect('/mis_productos')
 
         elif request.method == "GET":
+            #Recibe por medio del metodo get el "_id" del producto a editar, lo busca en la base de datos
+            #y proporciona la información del producto al front para su posterior edición
             _idproducto = request.args.get('_idproducto')
             mostrador = productos.find({'_id':ObjectId(_idproducto)})
             return render_template('editar.html', mostrador=mostrador, username=session['usr_name'])
@@ -125,10 +139,14 @@ def editar():
         return render_template('login.html',alerta = "/static/js/no_login.js")
 
 
+# Ruta para registra un nuevo producto
 @app.route('/add_producto',methods=["GET","POST"])
 def add_producto():
-    if 'usr' in session:
+    if 'usr' in session:        #Si hay una sesión iniciada
         if request.method == "POST":
+            #Al recibir una petición post obtiene del front la información del nuevo producto
+            #Busca el "_id" del usuario en sesión y posteriormente registra el producto con el "id_cliente"
+            #que es la clave que realiza la referencia de usuario-producto
             producto = request.form['producto']
             tipo = request.form['tipo']
             precio = request.form['precio']
@@ -136,9 +154,9 @@ def add_producto():
             productos.insert_one({'id_cliente':str(usuario['_id']),'producto':producto, 'tipo':tipo, 'precio':precio})
             return redirect('/mis_productos')
 
-        return render_template('add_producto.html', username=session['usr_name'])
+        return render_template('add_producto.html', username=session['usr_name']) #Envía el formulario en blanco
 
-    else:
+    else:               #Al no haber sesión activa manda una alerta y redirecciona al login
         return render_template('login.html',alerta = "/static/js/no_login.js")
 
 
